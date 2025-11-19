@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>지뢰 찾기</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -14,18 +15,41 @@
         }
         #game {
             background: #c0c0c0;
-            padding: 10px;
+            padding: 12px;
             border: 3px outset #fff;
             box-shadow: 0 0 20px rgba(0,0,0,0.3);
+            max-width: 95vw;
         }
         #header {
+            background: #c0c0c0;
+            border: 2px inset #c0c0c0;
+            margin-bottom: 10px;
+            padding: 8px;
+        }
+        #top-bar {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: #c0c0c0;
-            padding: 8px;
-            border: 2px inset #c0c0c0;
-            margin-bottom: 10px;
+            gap: 12px;
+        }
+        #difficulty-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 8px;
+            font-size: 14px;
+        }
+        #difficulty {
+            border: 2px inset #fff;
+            background: #e0e0e0;
+            padding: 4px 6px;
+            font-size: 14px;
+        }
+        #helper-text {
+            margin-top: 10px;
+            font-size: 13px;
+            text-align: center;
+            color: #333;
         }
         .display {
             background: black;
@@ -35,6 +59,8 @@
             font-weight: bold;
             padding: 4px 12px;
             letter-spacing: 3px;
+            min-width: 72px;
+            text-align: center;
         }
         #smiley {
             width: 52px;
@@ -55,6 +81,8 @@
             gap: 1px;
             background: black;
             padding: 5px;
+            overflow: auto;
+            max-width: 100%;
         }
         .cell {
             width: 30px;
@@ -67,6 +95,7 @@
             font-weight: bold;
             cursor: default;
             user-select: none;
+            font-size: 16px;
         }
         .cell:active {
             border: 2px inset #c0c0c0;
@@ -91,28 +120,69 @@
 <body>
     <div id="game">
         <div id="header">
-            <div id="mine-count" class="display">010</div>
-            <div id="smiley" onclick="reset()">😊</div>
-            <div id="timer" class="display">000</div>
+            <div id="top-bar">
+                <div id="mine-count" class="display">010</div>
+                <div id="smiley" onclick="reset()">😊</div>
+                <div id="timer" class="display">000</div>
+            </div>
+            <div id="difficulty-control">
+                <label for="difficulty">난이도 선택:</label>
+                <select id="difficulty"></select>
+            </div>
         </div>
         <div id="board"></div>
+        <p id="helper-text">왼쪽 클릭: 열기 · 오른쪽 클릭: 깃발 · 첫 클릭은 항상 안전합니다!</p>
     </div>
     <script>
-        const ROWS = 9, COLS = 9, TOTAL_MINES = 10;
+        const DIFFICULTIES = {
+            beginner: { label: '초급 (9×9)', rows: 9, cols: 9, mines: 10 },
+            intermediate: { label: '중급 (16×16)', rows: 16, cols: 16, mines: 40 },
+            expert: { label: '고급 (16×30)', rows: 16, cols: 30, mines: 99 }
+        };
+        let currentDifficulty = 'beginner';
+        let ROWS = DIFFICULTIES[currentDifficulty].rows;
+        let COLS = DIFFICULTIES[currentDifficulty].cols;
+        let TOTAL_MINES = DIFFICULTIES[currentDifficulty].mines;
         let board = [], cells = [], flags = 0, revealed = 0, gameOver = false, first = true, timer, sec = 0;
+        function initDifficultyOptions() {
+            const select = document.getElementById('difficulty');
+            select.innerHTML = '';
+            Object.entries(DIFFICULTIES).forEach(([key, diff]) => {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = `${diff.label} · 💣${String(diff.mines).padStart(2, '0')}`;
+                select.appendChild(option);
+            });
+            select.value = currentDifficulty;
+            select.onchange = e => {
+                currentDifficulty = e.target.value;
+                applyDifficulty();
+                reset();
+            };
+        }
+        function applyDifficulty() {
+            const diff = DIFFICULTIES[currentDifficulty];
+            ROWS = diff.rows;
+            COLS = diff.cols;
+            TOTAL_MINES = diff.mines;
+        }
         function reset() {
             clearInterval(timer);
             sec = 0; flags = 0; revealed = 0; gameOver = false; first = true;
             document.getElementById('timer').textContent = '000';
-            document.getElementById('mine-count').textContent = '010';
+            updateMineCount();
             document.getElementById('smiley').textContent = '😊';
             createBoard();
+        }
+        function updateMineCount() {
+            document.getElementById('mine-count').textContent = String(Math.max(TOTAL_MINES - flags, 0)).padStart(3, '0');
         }
         function createBoard() {
             const boardEl = document.getElementById('board');
             boardEl.innerHTML = '';
-            boardEl.style.gridTemplate = `repeat(${ROWS}, 30px) / repeat(${COLS}, 30px)`;
-            board = Array(ROWS).fill().map(() => Array(COLS).fill().map(() => ({mine: false, revealed: false, flag: false, num: 0})));
+            boardEl.style.gridTemplateRows = `repeat(${ROWS}, 30px)`;
+            boardEl.style.gridTemplateColumns = `repeat(${COLS}, 30px)`;
+            board = Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => ({ mine: false, revealed: false, flag: false, num: 0 })));
             cells = [];
             for (let r = 0; r < ROWS; r++) {
                 for (let c = 0; c < COLS; c++) {
@@ -155,12 +225,12 @@
         }
         function handleClick(e, r, c) {
             if (gameOver || board[r][c].revealed || board[r][c].flag) return;
-            if (e.button === 0) { // 왼쪽 클릭
+            if (e.button === 0) {
                 if (first) {
                     first = false;
                     placeMines(r, c);
                     timer = setInterval(() => {
-                        sec++;
+                        sec = Math.min(sec + 1, 999);
                         document.getElementById('timer').textContent = String(sec).padStart(3, '0');
                     }, 1000);
                 }
@@ -172,7 +242,7 @@
             board[r][c].flag = !board[r][c].flag;
             flags += board[r][c].flag ? 1 : -1;
             cells[r * COLS + c].textContent = board[r][c].flag ? '🚩' : '';
-            document.getElementById('mine-count').textContent = String(TOTAL_MINES - flags).padStart(3, '0');
+            updateMineCount();
             checkWin();
         }
         function reveal(r, c) {
@@ -223,6 +293,8 @@
                 clearInterval(timer);
             }
         }
+        applyDifficulty();
+        initDifficultyOptions();
         reset();
     </script>
 </body>
